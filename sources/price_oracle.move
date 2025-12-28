@@ -57,7 +57,7 @@ module sui_learning::price_oracle{
 
         transfer::share_object(oracle);
     }
-    /// Public function to update the price
+    // Public function to update the price
     public fun update_price(
         _admin: &AdminCap, // Validate the admin cap, the logic is if you need to borrow one, you have to have one (The underline before admin is to avoid unused warning cos this is just for the validation.)
         oracle: &mut Oracle,
@@ -66,10 +66,8 @@ module sui_learning::price_oracle{
     )
     {   // Record the old price
         let old_price = oracle.price;
-
         // Update the price
         oracle.price = new_price;
-
         // Update the last updated time  
         oracle.last_updated = tx_context::epoch(ctx);
 
@@ -81,6 +79,23 @@ module sui_learning::price_oracle{
             timestamp: oracle.last_updated,
         });
     }
-    /// Public function 
-    /// 
+    // Public function to get info of the oracle
+    public fun get_price(oracle: &Oracle): u64 {
+        oracle.price
+    }
+    public fun get_pair(oracle: &Oracle): String {
+        oracle.pair
+    }
+    public fun get_last_update(oracle: &Oracle): u64 {
+        oracle.last_updated
+    }
+    public fun get_decimals(oracle: &Oracle): u8 {
+        oracle.decimals
+    }
+    
+    // Check if price is fresh (not stale)
+    public fun is_fresh(oracle: &Oracle, max_age: u64, current_time: u64): bool {
+        let age = current_time - oracle.last_updated;
+        age <= max_age
+    }
 }
