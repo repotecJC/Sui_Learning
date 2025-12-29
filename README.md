@@ -7,16 +7,6 @@
 [![Sui Testnet](https://img.shields.io/badge/Sui-Testnet-blue.svg)](https://suivision.xyz/testnet)
 
 ## 🚀 快速啟動
-text
-# Sui Move 學習專案 🚀
-
-一個完整的 Sui Move 練習專案，包含 **Hero 範例** + 自製 **Price Oracle**（價格預言機）。
-
-**學習重點**：Object、Capability、Event、Shared Object、價格新鮮度檢查。
-
-[![Sui Testnet](https://img.shields.io/badge/Sui-Testnet-blue.svg)](https://suivision.xyz/testnet)
-
-## 🚀 快速啟動
 1. Clone 專案
 git clone https://github.com/repotecJC/Sui_Learning.git
 cd Sui_Learning
