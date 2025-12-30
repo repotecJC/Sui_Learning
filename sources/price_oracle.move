@@ -79,6 +79,11 @@ module sui_learning::price_oracle{
             timestamp: oracle.last_updated,
         });
     }
+
+    public fun add_admin(
+        
+    )
+
     // Public function to get info of the oracle
     public fun get_price(oracle: &Oracle): u64 {
         oracle.price
@@ -96,6 +101,10 @@ module sui_learning::price_oracle{
     // Check if price is fresh (not stale)
     public fun is_fresh(oracle: &Oracle, max_age: u64, ctx: &TxContext): bool {
         let now = tx_context::epoch(ctx)
+        if (now < oracle.last_updated){
+            return false
+        };
+
         let age = now - oracle.last_updated;
         age <= max_age
     }
