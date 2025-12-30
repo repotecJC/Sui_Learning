@@ -94,8 +94,9 @@ module sui_learning::price_oracle{
     }
     
     // Check if price is fresh (not stale)
-    public fun is_fresh(oracle: &Oracle, max_age: u64, current_time: u64): bool {
-        let age = current_time - oracle.last_updated;
+    public fun is_fresh(oracle: &Oracle, max_age: u64, ctx: &TxContext): bool {
+        let now = tx_context::epoch(ctx)
+        let age = now - oracle.last_updated;
         age <= max_age
     }
 }
