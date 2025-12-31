@@ -8,7 +8,14 @@ module sui_learning::price_oracle{
     // Sui models
     use sui::event;
     
+    // Errors
+    const EAdminsOverLimit: u64 = 0;
+
     // Struct
+    /// SuperAdminCap
+    public struct SuperAdminCap has key, store{
+        id: UID,
+    }
     /// AdminCap
     public struct AdminCap has key, store{
         id: UID,
@@ -19,7 +26,9 @@ module sui_learning::price_oracle{
         pair: String, // ex. BTC/USDT
         price: u64,
         decimals: u8,
-        last_updated: u64, // epoch timesta
+        last_updated: u64, // epoch timestamp
+        admin_minted: u64,
+        admin_limit: u64,
     }
     /// Price update event
     public struct PriceUpdateEvent has copy, drop{
@@ -36,14 +45,19 @@ module sui_learning::price_oracle{
         initial_price: u64,
         decimals: u8,
         ctx: &mut TxContext,
+        admin_limit: u64,
     )
     {   
-        // Struct instances
+        // Struct instances (super and normal admin)
+        let super_admin_cap = SuperAdminCap{
+            id: object::new(ctx)
+        };
         let admin_cap = AdminCap{
             id: object::new(ctx)
         };
 
         // Transfer the admin cap to the sender
+        transfer::public_transfer(super_admin_cap, tx_context::sender(ctx));
         transfer::public_transfer(admin_cap, tx_context::sender(ctx));
         
         // Create the oracle (Struct instance)
@@ -52,12 +66,40 @@ module sui_learning::price_oracle{
             pair,
             price: initial_price,
             decimals,
+            admin_minted: 1, // Founder has 1
+            admin_limit,
             last_updated: tx_context::epoch(ctx), // Get the current epoch time
         };
 
         transfer::share_object(oracle);
     }
-    // Public function to update the price
+
+    // Super admin authority (add admin and increase admin limit)
+    public fun add_admin(
+        _superadmin: &SuperAdminCap,
+        oracle: &mut Oracle,
+        receiver: address,
+        ctx: &mut TxContext,
+    )
+    {
+        assert!(oracle.admin_minted < oracle.admin_limit, EAdminsOverLimit);
+        // If not over limit
+        oracle.admin_minted = oracle.admin_minted + 1;
+        let new_admin_cap = AdminCap { id: object::new(ctx) };
+        transfer::public_transfer(new_admin_cap, receiver);
+        
+    }
+
+    public fun increase_admin_limit(
+        _superadmin: &SuperAdminCap,
+        oracle: &mut Oracle,
+        new_limit: u64,
+    )
+    {
+        oracle.admin_limit = new_limit;
+    }
+
+    // Public function to update the price (Normal Admin)
     public fun update_price(
         _admin: &AdminCap, // Validate the admin cap, the logic is if you need to borrow one, you have to have one (The underline before admin is to avoid unused warning cos this is just for the validation.)
         oracle: &mut Oracle,
@@ -80,11 +122,7 @@ module sui_learning::price_oracle{
         });
     }
 
-    public fun add_admin(
-        
-    )
-
-    // Public function to get info of the oracle
+    // Public function to get info of the oracle (Everyone can access)
     public fun get_price(oracle: &Oracle): u64 {
         oracle.price
     }
@@ -100,7 +138,7 @@ module sui_learning::price_oracle{
     
     // Check if price is fresh (not stale)
     public fun is_fresh(oracle: &Oracle, max_age: u64, ctx: &TxContext): bool {
-        let now = tx_context::epoch(ctx)
+        let now = tx_context::epoch(ctx);
         if (now < oracle.last_updated){
             return false
         };
