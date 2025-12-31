@@ -1,143 +1,154 @@
-# Sui Move 學習專案 🚀
+# Sui Move Learning Project 🚀
 
-一個完整的 Sui Move 練習專案，包含 **Hero 範例** + 自製 **Price Oracle**（價格預言機）。
+A comprehensive Sui Move practice project, featuring the **Hero Example** + a custom **Price Oracle**.
 
-**學習重點**：Object、Capability、Event、Shared Object、價格新鮮度檢查。
+**Learning Focus**: Objects, Capabilities, Events, Shared Objects, Price Freshness Checks, Multi-level Permission Management.
 
 [![Sui Testnet](https://img.shields.io/badge/Sui-Testnet-blue.svg)](https://suivision.xyz/testnet)
 
-## 🚀 快速啟動
-1. Clone 專案
+## 🚀 Quick Start
+
+1. **Clone the Repository**
 git clone https://github.com/repotecJC/Sui_Learning.git
 cd Sui_Learning
-
-2. 確認 testnet + 領 SUI
-sui client active-env # 確認 testnet
-sui client faucet # 領 testnet SUI
-
-3. 編譯 + 部署
+2. **Verify Testnet + Request SUI**
+sui client active-env # Confirm testnet environment
+sui client faucet # Request testnet SUI
+3. **Build + Publish**
 sui move build
-sui client publish # 記下顯示的 Package ID！
+sui client publish --gas-budget 100000000 # Note the Package ID displayed!
 
+## 📦 Deployed Package IDs
 
-## 📦 已部署 Package ID
+| Environment | Package ID | Deployment Machine | Suivision Link | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **testnet** | `0x42c67a54264a111fe2a865d9e34ead1855a12888a50303b6bf9a4007e2853f93` | **Windows PC** | [View](https://suivision.xyz/testnet/object/0x42c67a54264a111fe2a865d9e34ead1855a12888a50303b6bf9a4007e2853f93) | ✅ Verified |
+| **testnet** | `[PASTE_MACBOOK_PACKAGE_ID_HERE]` | **MacBook** | [View](https://suivision.xyz/testnet/object/[PASTE_MACBOOK_PACKAGE_ID_HERE]) | ⏳ Pending |
 
-| 環境 | Package ID | 部署電腦 | Suivision 連結 | 狀態 |
-|------|------------|----------|---------------|------|
-| **testnet** | `0x42c67a54264a111fe2a865d9e34ead1855a12888a50303b6bf9a4007e2853f93` | **Windows PC** | [查看](https://suivision.xyz/testnet/object/0x42c67a54264a111fe2a865d9e34ead1855a12888a50303b6bf9a4007e2853f93) | ✅ 已確認 |
-| **testnet** | `[MACBOOK_PACKAGE_ID_請貼這裡]` | **MacBook** | [查看](https://suivision.xyz/testnet/object/[MACBOOK_PACKAGE_ID_請貼這裡]) | ⏳ 待確認 |
+**How to find the MacBook Package ID**:
 
-**填入 MacBook Package ID 方法**：
-Mac/Linux
-sui client objects | grep package
+*   Mac/Linux:
+ ```
+ sui client objects | grep package
+ ```
+*   Windows:
+ ```
+ sui client objects | Select-String "package"
+ ```
 
-Windows
-sui client objects | Select-String "package"
-
-
-## 🏗️ 專案架構
+## 🏗️ Project Structure
 sources/
-├── hero.move # Sui 官方 Hero 範例
-└── price_oracle.move # 自製價格預言機
+├── hero.move # Official Sui Hero example
+└── price_oracle.move # Custom Price Oracle (Tiered Permissions)
 ├── Oracle (Shared Object)
-│ ├── price: u64 # 當前價格
-│ ├── pair: String # "BTC/USD"
-│ └── last_updated: u64 # 上次更新時間 (epoch)
-└── AdminCap (Capability) # 管理權限
+│ ├── price: u64 # Current price
+│ ├── pair: String # e.g., "BTC/USD"
+│ ├── admin_minted: u64 # Count of issued AdminCaps
+│ ├── admin_limit: u64 # Maximum AdminCap limit
+│ └── last_updated: u64 # Last update timestamp (epoch)
+├── SuperAdminCap (Owned) # Super Admin capability (Can add Admins)
+└── AdminCap (Owned) # Regular Admin capability (Can update price)
 
+### 🛠️ Core Functions
 
-### 🛠️ 核心功能
+| Function | Purpose | Permission Required | Description |
+| :--- | :--- | :--- | :--- |
+| `create_oracle` | Create Oracle | Anyone | Initialises Oracle, SuperAdminCap, and AdminCap |
+| `add_admin` | Add New Admin | `SuperAdminCap` | Issues a new AdminCap to a specified address |
+| `increase_limit`| Increase Admin Limit | `SuperAdminCap` | Adjusts the maximum limit for AdminCaps |
+| `update_price` | Update Price | `AdminCap` | Updates the Oracle price and emits an Event |
+| `get_price` | Query Price | Read-only `&Oracle` | Public access for reading price |
+| `is_fresh` | Check Freshness | Read-only `&Oracle` | Verifies if the price is stale (Defensive programming) |
 
-| 函式 | 用途 | 權限要求 |
-|------|------|----------|
-| `create_oracle` | 建立預言機 | 任何人 |
-| `update_price` | 更新價格 | 需要 `AdminCap` |
-| `get_price` | 查詢價格 | 唯讀 `&Oracle` |
-| `is_price_fresh` | 檢查新鮮度 | 唯讀 `&Oracle` + `&TxContext` |
+## 💻 Usage Examples
 
-## 💻 使用範例
-
-### 1. 查詢價格
+### 1. Query Price (CLI)
 sui client call
---package 0x42c67a54264a111fe2a865d9e34ead1855a12888a50303b6bf9a4007e2853f93
+--package [PACKAGE_ID]
 --module price_oracle
 --function get_price
 --args [ORACLE_OBJECT_ID]
-
-### 2. DeFi 整合範例（其他合約）
+### 2. DeFi Integration Example (Move Contract)
 public fun safe_liquidate(oracle: &Oracle, ctx: &TxContext) {
-// ✅ 防 stale price 攻擊
-assert!(price_oracle::is_price_fresh(oracle, 300, ctx), E_STALE_PRICE);
-let price = price_oracle::get_price(oracle);
-// 安全清算...
+    // ✅ Prevent stale price attacks
+    // Check if the price was updated within the last 300 seconds (5 mins)
+    assert!(price_oracle::is_fresh(oracle, 300, ctx), E_STALE_PRICE);
+    let price = price_oracle::get_price(oracle);
+    // Execute safe liquidation logic...
 }
 
+## 🔄 Multi-Machine Development Workflow
 
-## 🔄 多台電腦開發流程
-1. 同步程式碼
-git pull origin main
+1.  **Sync Code**
+    ```
+    git pull origin main
+    ```
+2.  **Publish Independently on Each Machine**
+    ```
+    sui move build
+    sui client publish --gas-budget 100000000
+    ```
+3.  **Update README + Push**
+    ```
+    git add README.md
+    git commit -m "docs: update [Machine Name] Package ID"
+    git push
+    ```
 
-2. 每台電腦獨立 publish
-sui move build
-sui client publish # 產生獨立 Package ID
+## 🧪 Local Development Commands
 
-3. 更新 README + push
-git add README.md
-git commit -m "docs: update [電腦名] Package ID"
-git push
+*   **Environment Check**
+    ```
+    sui client active-env # Should be testnet
+    sui client gas        # Balance > 0.1 SUI
+    ```
+*   **Development Cycle**
+    ```
+    sui move build    # Compile
+    sui move test     # Run tests
+    sui client publish # Deploy
+    ```
+*   **Git Sync**
+    ```
+    git status
+    git add .
+    git commit -m "feat: Describe new features..."
+    git push
+    ```
 
+## 📚 Learning Resources
 
-## 🧪 本地開發指令
-環境檢查
-sui client active-env # testnet
-sui client gas # 餘額 > 0.1 SUI
+*   [Sui Move Book](https://move-language.github.io/move/)
+*   [Official Sui Documentation](https://docs.sui.io/)
+*   [Suivision Explorer](https://suivision.xyz/testnet)
+*   Reference: [Perplexity AI Sui Move Tutorials](https://www.perplexity.ai/)
 
-開發循環
-sui move build # 編譯
-sui move test # 測試
-sui client publish # 部署
+## 🔧 System Requirements
 
-Git 同步
-git status
-git add .
-git commit -m "feat: ..."
-git push
+*   **Sui CLI**: Latest version
+*   **Network**: testnet
+*   **Dependencies**: Sui Framework (framework/testnet)
+*   **Move.toml + Move.lock**: Committed ✓
 
-
-## 📚 學習資源
-
-- [Sui Move Book](https://move-language.github.io/move/)
-- [Sui 官方文件](https://docs.sui.io/)
-- [Suivision 瀏覽器](https://suivision.xyz/testnet)
-- 參考：[Perplexity AI Sui Move 教學](https://www.perplexity.ai/)
-
-## 🔧 環境需求
-Sui CLI: 最新版
-Network: testnet
-Dependencies: Sui Framework (framework/testnet)
-Move.toml + Move.lock 已 commit ✓
-
-
-## 📈 Commit 歷史
+## 📈 Commit History
 a823041 feat(oracle): add update_price + is_fresh
 ce60ecf feat(oracle): create_oracle + structs
 34c4155 docs: add price_oracle.move
 baca886 feat(oracle): module structure
+*(Full history: `git log --oneline -10`)*
 
-完整歷史：`git log --oneline -10`
+## 🙋‍♂️ Issues & Contributions
 
-## 🙋‍♂️ 問題回報 & 貢獻
+*   🐛 Found a bug? [Open an Issue](https://github.com/repotecJC/Sui_Learning/issues)
+*   💡 Have suggestions? Pull Requests are welcome
+*   🤝 Want to collaborate? Contact **repotecJC**
 
-- 🐛 發現 bug？[開 Issue](https://github.com/repotecJC/Sui_Learning/issues)
-- 💡 有建議？歡迎 Pull Request
-- 🤝 想合作？聯絡 repotecJC
+## ⭐ Support This Project
 
-## ⭐ 支援專案
-
-正在學習 Sui Move / Web3，一起進步！  
-**Star 支持** 或 **分享給朋友**～
+Learning Sui Move / Web3 and growing every day!  
+**Star this repo** or **share with friends** to show your support!
 
 ---
 
-**最後更新**：2025-12-29  
-**TODO**: `[MACBOOK_PACKAGE_ID_請貼這裡]` ← **回家 MacBook 執行 `sui client objects | grep package` 填入**
+**Last Updated**: 31 Dec 2025  
+**TODO**: `[PASTE_MACBOOK_PACKAGE_ID_HERE]` ← **Run `sui client objects | grep package` on MacBook and fill in**
