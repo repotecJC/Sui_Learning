@@ -44,8 +44,8 @@ module sui_learning::price_oracle{
         pair: String,
         initial_price: u64,
         decimals: u8,
-        ctx: &mut TxContext,
         admin_limit: u64,
+        ctx: &mut TxContext,
     )
     {   
         // Struct instances (super and normal admin)
