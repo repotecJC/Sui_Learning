@@ -131,10 +131,6 @@ public fun safe_liquidate(oracle: &Oracle, ctx: &TxContext) {
 *   **Move.toml + Move.lock**: Committed ✓
 
 ## 📈 Commit History
-a823041 feat(oracle): add update_price + is_fresh
-ce60ecf feat(oracle): create_oracle + structs
-34c4155 docs: add price_oracle.move
-baca886 feat(oracle): module structure
 *(Full history: `git log --oneline -10`)*
 
 ## 🙋‍♂️ Issues & Contributions
