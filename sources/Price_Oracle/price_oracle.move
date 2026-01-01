@@ -4,10 +4,8 @@ module sui_learning::price_oracle{
 
     // Common models
     use std::string::String;
-
     // Sui models
     use sui::event;
-    
     // Errors
     const EAdminsOverLimit: u64 = 0;
 
@@ -89,7 +87,6 @@ module sui_learning::price_oracle{
         transfer::public_transfer(new_admin_cap, receiver);
         
     }
-
     public fun increase_admin_limit(
         _superadmin: &SuperAdminCap,
         oracle: &mut Oracle,
@@ -136,7 +133,7 @@ module sui_learning::price_oracle{
         oracle.decimals
     }
     
-    // Check if price is fresh (not stale)
+    /// Check if price is fresh (not stale)
     public fun is_fresh(oracle: &Oracle, max_age: u64, ctx: &TxContext): bool {
         let now = tx_context::epoch(ctx);
         if (now < oracle.last_updated){
