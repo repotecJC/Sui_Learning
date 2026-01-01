@@ -23,7 +23,7 @@ sui client publish --gas-budget 100000000 # Note the Package ID displayed!
 | Environment | Package ID | Deployment Machine | Suivision Link | Status |
 | :--- | :--- | :--- | :--- | :--- |
 | **testnet** | `0x42c67a54264a111fe2a865d9e34ead1855a12888a50303b6bf9a4007e2853f93` | **Windows PC** | [View](https://suivision.xyz/testnet/object/0x42c67a54264a111fe2a865d9e34ead1855a12888a50303b6bf9a4007e2853f93) | ✅ Verified |
-| **testnet** | `[PASTE_MACBOOK_PACKAGE_ID_HERE]` | **MacBook** | [View](https://suivision.xyz/testnet/object/[PASTE_MACBOOK_PACKAGE_ID_HERE]) | ⏳ Pending |
+| **testnet** | `0x278e8056d479540c934ce4ded717b2cad166855fdb1aaca742742d7329dd1c72` | **MacBook** | [View](https://suivision.xyz/testnet/object/0x278e8056d479540c934ce4ded717b2cad166855fdb1aaca742742d7329dd1c72) | ⏳ Pending |
 
 **How to find the MacBook Package ID**:
 
@@ -146,5 +146,4 @@ Learning Sui Move / Web3 and growing every day!
 
 ---
 
-**Last Updated**: 31 Dec 2025  
-**TODO**: `[PASTE_MACBOOK_PACKAGE_ID_HERE]` ← **Run `sui client objects | grep package` on MacBook and fill in**
+**Last Updated**: 31 Dec 2025
