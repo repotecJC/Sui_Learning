@@ -37,6 +37,27 @@ module sui_learning::price_oracle{
     }
 
     // Initialise Oracle
+    /// 20260103 Isolated function to make new oracle
+    public fun new_oracle(
+        pair: String,
+        initial_price: u64,
+        decimals: u8,
+        admin_limit: u64,
+        ctx: &mut TxContext,
+    ): Oracle
+    {   
+        // Create the oracle (Struct instance)
+        Oracle {
+            id: object::new(ctx),
+            pair,
+            price: initial_price,
+            decimals,
+            admin_minted: 1, // Founder has 1
+            admin_limit,
+            last_updated: tx_context::epoch(ctx), // Get the current epoch time
+        };
+    }
+    
     /// Public function to create oracle (If there is no return value, it can be a entry function)
     public fun create_oracle(
         pair: String,
@@ -59,14 +80,12 @@ module sui_learning::price_oracle{
         transfer::public_transfer(admin_cap, tx_context::sender(ctx));
         
         // Create the oracle (Struct instance)
-        let oracle = Oracle {
-            id: object::new(ctx),
+        let oracle = new_oracle {
             pair,
             price: initial_price,
             decimals,
             admin_minted: 1, // Founder has 1
             admin_limit,
-            last_updated: tx_context::epoch(ctx), // Get the current epoch time
         };
 
         transfer::share_object(oracle);
