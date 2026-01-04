@@ -44,10 +44,18 @@ module sui_learning::price_oracle{
         decimals: u8,
         admin_limit: u64,
         ctx: &mut TxContext,
-    ): Oracle
+    ): (Oracle, SuperAdminCap, AdminCap)
     {   
+        // Struct instances (super and normal admin)
+        let super_admin_cap = SuperAdminCap{
+            id: object::new(ctx)
+        };
+        let admin_cap = AdminCap{
+            id: object::new(ctx)
+        };
+
         // Create the oracle (Struct instance)
-        Oracle {
+        let oracle = Oracle {
             id: object::new(ctx),
             pair,
             price: initial_price,
@@ -56,6 +64,8 @@ module sui_learning::price_oracle{
             admin_limit,
             last_updated: tx_context::epoch(ctx), // Get the current epoch time
         };
+        // Return the created oracle and admin caps
+        (oracle, super_admin_cap, admin_cap)
     }
     
     /// Public function to create oracle (If there is no return value, it can be a entry function)
@@ -67,27 +77,17 @@ module sui_learning::price_oracle{
         ctx: &mut TxContext,
     )
     {   
-        // Struct instances (super and normal admin)
-        let super_admin_cap = SuperAdminCap{
-            id: object::new(ctx)
-        };
-        let admin_cap = AdminCap{
-            id: object::new(ctx)
-        };
+        // Create the oracle (Struct instance)
+        let (oracle, super_admin_cap, admin_cap) = new_oracle (
+            pair,
+            initial_price,
+            decimals,
+            admin_limit, // Founder has 1
+            ctx,
+        );
 
-        // Transfer the admin cap to the sender
         transfer::public_transfer(super_admin_cap, tx_context::sender(ctx));
         transfer::public_transfer(admin_cap, tx_context::sender(ctx));
-        
-        // Create the oracle (Struct instance)
-        let oracle = new_oracle {
-            pair,
-            price: initial_price,
-            decimals,
-            admin_minted: 1, // Founder has 1
-            admin_limit,
-        };
-
         transfer::share_object(oracle);
     }
 
