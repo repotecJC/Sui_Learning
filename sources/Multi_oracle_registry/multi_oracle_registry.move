@@ -10,7 +10,7 @@ module sui_learning::multi_oracle_registry{
     use sui_learning::price_oracle as po;
 
     // Struct
-    public struct OracleRegistry has key{
+    public struct OracleRegistry has key, store{
         id: UID,
     }
 
