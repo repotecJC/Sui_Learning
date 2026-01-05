@@ -15,18 +15,29 @@ module sui_learning::multi_oracle_registry{
     }
 
     // Public functions
+    /// Create an OracleRegistry
+    public fun create_registry has key, store(
+        ctx: &mut TxContext,
+    ): OracleRegistry{
+        let registry = OracleRegistry{
+            id = object::new(ctx)
+        };
+        transfer::share_object(regustry);
+    }
+
+    /// Combine the base and quote like base: BTC, quote: USDT
     public fun make_pair_key(
         base: vector<u8>,
         quote: vector<u8>,
     ): vector<u8>
     {
         let mut key = vector::empty<u8>();
-        vector::append(&mut key, base);
-        vector::append(&mut key, 47); // ASCII code for '/'
+        vector::append(&mut key, base); // append is for vector
+        vector::push_back(&mut key, 47); // ASCII code for '/', push_back is for an element like in this case is "u8"
         vector::append(&mut key, quote);
         key
     }
-
+    /// Register the oracle under OracleRegistry
     public fun register_oracle(
         registry: &mut OracleRegistry,
         base: vector<u8>,
