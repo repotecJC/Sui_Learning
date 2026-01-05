@@ -19,7 +19,7 @@ module sui_learning::price_oracle{
         id: UID,
     }
     /// Oracle
-    public struct Oracle has key{
+    public struct Oracle has key, store{
         id: UID,
         pair: String, // ex. BTC/USDT
         price: u64,

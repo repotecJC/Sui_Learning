@@ -18,11 +18,12 @@ module sui_learning::multi_oracle_registry{
     /// Create an OracleRegistry
     public fun create_registry(
         ctx: &mut TxContext,
-    ): OracleRegistry{
-        let registry = OracleRegistry{
-            id = object::new(ctx)
+    )
+    {
+        let registry = OracleRegistry {
+            id: object::new(ctx),
         };
-        transfer::share_object(regustry);
+        transfer::share_object(registry);
     }
 
     /// Combine the base and quote like base: BTC, quote: USDT
