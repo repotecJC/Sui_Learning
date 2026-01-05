@@ -16,7 +16,7 @@ module sui_learning::multi_oracle_registry{
 
     // Public functions
     /// Create an OracleRegistry
-    public fun create_registry has key, store(
+    public fun create_registry(
         ctx: &mut TxContext,
     ): OracleRegistry{
         let registry = OracleRegistry{
