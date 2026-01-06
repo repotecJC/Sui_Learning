@@ -14,8 +14,8 @@ module sui_learning::multi_oracle_registry{
         id: UID,
     }
 
-    // Public functions
-    /// Create an OracleRegistry
+    // Create Registry and put the oracle on it
+    /// Create the OracleRegistry
     public fun create_registry(
         ctx: &mut TxContext,
     )
@@ -38,7 +38,8 @@ module sui_learning::multi_oracle_registry{
         vector::append(&mut key, quote);
         key
     }
-    /// Register the oracle under OracleRegistry
+
+    /// Create a new oracle and register it to the OracleRegistry
     public fun register_oracle(
         registry: &mut OracleRegistry,
         base: vector<u8>,
@@ -65,4 +66,7 @@ module sui_learning::multi_oracle_registry{
         transfer::public_transfer(super_admin_cap, tx_context::sender(ctx));
         transfer::public_transfer(admin_cap, tx_context::sender(ctx));
     }
+
+    // Function for get the information about oracle in the registry
+    
 }
