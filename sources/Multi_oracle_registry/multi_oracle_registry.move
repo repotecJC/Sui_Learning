@@ -94,16 +94,29 @@ module sui_learning::multi_oracle_registry{
     }
 
     // Function for UPDATE the information about oracle in the registry
+    /// Helper function
+    public fun get_oracle_mut(
+        registry: &mut OracleRegistry,
+        base: vector<u8>,
+        quote: vector<u8>,
+    ): &mut po::Oracle
+    {
+        let pair_key = make_pair_key(base, quote);
+        dof::borrow_mut<vector<u8>, po::Oracle>(&mut registry.id, pair_key)
+    }
+
     public fun update_oracle_price(
-        registry: &OracleRegistry,
+        registry: &mut OracleRegistry,
+        admin_cap: &po::AdminCap,
         base: vector<u8>,
         quote: vector<u8>,
         new_price: u64,
         ctx: &mut TxContext
     )
     {
-        let oracle = get_oracle(registry, base, quote);
+        let oracle = get_oracle_mut(registry, base, quote);
         po::update_price(
+            admin_cap,
             oracle,
             new_price,
             ctx,
