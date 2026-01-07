@@ -67,6 +67,46 @@ module sui_learning::multi_oracle_registry{
         transfer::public_transfer(admin_cap, tx_context::sender(ctx));
     }
 
-    // Function for get the information about oracle in the registry
+    // Function for GET the information about oracle in the registry
+    /// Oracle
+    public fun get_oracle(
+        registry: &OracleRegistry,
+        base: vector<u8>,
+        quote: vector<u8>,
+    ): &po::Oracle
+    {
+        let pair_key = make_pair_key(base, quote);
+
+        dof::borrow<vector<u8>, po::Oracle>(&registry.id, pair_key)
+        // <vector<u8>, po::Oracle> is to tell borrow that the type of key (get access to the target) is vector<u8> and value (the return value of target) is po::Oracle
+        // Note: because borrow is a generic function so there are many types that can use borrow, tell it what type is using is neccessary
+    }
     
+    /// Price
+    public fun get_oracle_price(
+        registry: &OracleRegistry,
+        base: vector<u8>,
+        quote: vector<u8>,
+    ): u64
+    {
+        let oracle = get_oracle(registry, base, quote);
+        po::get_price(oracle)
+    }
+
+    // Function for UPDATE the information about oracle in the registry
+    public fun update_oracle_price(
+        registry: &OracleRegistry,
+        base: vector<u8>,
+        quote: vector<u8>,
+        new_price: u64,
+        ctx: &mut TxContext
+    )
+    {
+        let oracle = get_oracle(registry, base, quote);
+        po::update_price(
+            oracle,
+            new_price,
+            ctx,
+        )
+    }
 }
