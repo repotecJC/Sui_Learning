@@ -9,18 +9,28 @@ module sui_learning::multi_oracle_registry{
     // sui_learning models
     use sui_learning::price_oracle as po;
 
+    // Error code
+    const ERegistryExists: u64 = 0;
+    const EPairExists: u64 = 1;
+    const EPairNotFound: u64 = 2;
+    
+    
+
     // Struct
     public struct OracleRegistry has key, store{
         id: UID,
+        name: String,
     }
 
     // Create Registry and put the oracle on it
     /// Create the OracleRegistry
     public fun create_registry(
+        name: String,
         ctx: &mut TxContext,
     )
     {
         let registry = OracleRegistry {
+            name,
             id: object::new(ctx),
         };
         transfer::share_object(registry);
@@ -68,7 +78,7 @@ module sui_learning::multi_oracle_registry{
     }
 
     // Function for GET the information about oracle in the registry
-    /// Oracle
+    /// Oracle (Not allow to use CLI to get an Oracle object)
     public fun get_oracle(
         registry: &OracleRegistry,
         base: vector<u8>,
