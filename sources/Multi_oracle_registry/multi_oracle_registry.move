@@ -1,23 +1,37 @@
 module sui_learning::multi_oracle_registry;
 
-use std::string::String;
+use std::string;
 use sui::dynamic_object_field as dof;
 use sui_learning::price_oracle as po;
+use sui::event;
 
 // Error code
-const ERegistryExists: u64 = 0;
-const EPairExists: u64 = 1;
-const EPairNotFound: u64 = 2;
+const EPairExists: u64 = 1; // for register_oracle
+const EPairNotFound: u64 = 2; // for get_oracle and get_oracle_mut
 
 // Struct
 public struct OracleRegistry has key, store {
     id: UID,
-    name: String,
+    name: string::String,
+}
+
+/// Event struct
+public struct OracleRegisteredEvent has copy, drop, store {
+    registry_id: ID,
+    oracle_id: ID,
+    pair: vector<u8>,
+    timestamp: u64,
+}
+public struct OracleRemovedEvent has copy, drop, store {
+    registry_id: ID,
+    oracle_id: ID,
+    pair: vector<u8>,
+    timestamp: u64,
 }
 
 // Create Registry and put the oracle on it
 /// Create the OracleRegistry
-public fun create_registry(name: String, ctx: &mut TxContext) {
+public fun create_registry(name: string::String, ctx: &mut TxContext) {
     let registry = OracleRegistry {
         name,
         id: object::new(ctx),
@@ -44,8 +58,18 @@ public fun register_oracle(
     admin_limit: u64,
     ctx: &mut TxContext,
 ) {
+    // Pair key
     let pair_key = make_pair_key(base, quote);
-    let pair_string = string::utf8(copy pair_key);
+    // Copy pair keys for different uses
+    let pair_key_check = copy pair_key; // Existence check
+    let pair_key_event = copy pair_key; // Event emission
+    let pair_string = string::utf8(copy pair_key); // For oracle creation
+
+    // Check if the pair already exists
+    assert!(
+        !dof::exists_<vector<u8>>(&registry.id, pair_key_check), EPairExists
+    );
+    // Create new oracle
     let (oracle, super_admin_cap, admin_cap) = po::new_oracle(
         pair_string,
         initial_price,
@@ -53,18 +77,32 @@ public fun register_oracle(
         admin_limit,
         ctx,
     );
-
-    dof::add(&mut registry.id, pair_key, oracle);
-
     // Transfer the admin cap to the sender
     transfer::public_transfer(super_admin_cap, tx_context::sender(ctx));
     transfer::public_transfer(admin_cap, tx_context::sender(ctx));
+    // Borrow ids for event
+    let oracle_id = object::id(&oracle);
+    let registry_id = object::id(registry); // registry is a reference, no need to use &
+
+    // Insert the oracle into the registry
+    dof::add(&mut registry.id, pair_key, oracle);
+
+    // Emit the oracle registeredevent
+    event::emit(OracleRegisteredEvent{
+        registry_id,
+        oracle_id,
+        pair: pair_key_event,
+        timestamp: tx_context::epoch(ctx),
+    });
 }
 
 // Function for GET the information about oracle in the registry
 /// Oracle (Not allow to use CLI to get an Oracle object)
 public fun get_oracle(registry: &OracleRegistry, base: vector<u8>, quote: vector<u8>): &po::Oracle {
     let pair_key = make_pair_key(base, quote);
+    assert!(
+        dof::exists_<vector<u8>>(&registry.id, pair_key), EPairNotFound
+    );
 
     dof::borrow<vector<u8>, po::Oracle>(&registry.id, pair_key)
     // <vector<u8>, po::Oracle> is to tell borrow that the type of key (get access to the target) is vector<u8> and value (the return value of target) is po::Oracle
@@ -85,6 +123,9 @@ public fun get_oracle_mut(
     quote: vector<u8>,
 ): &mut po::Oracle {
     let pair_key = make_pair_key(base, quote);
+    assert!(
+        dof::exists_<vector<u8>>(&registry.id, pair_key), EPairNotFound
+    );
     dof::borrow_mut<vector<u8>, po::Oracle>(&mut registry.id, pair_key)
 }
 
