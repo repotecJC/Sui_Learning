@@ -95,6 +95,23 @@ public fun register_oracle(
         timestamp: tx_context::epoch(ctx),
     });
 }
+/// Remove an oracle from the registry
+public fun remove_oracle(
+    _super_admin_cap: &po::SuperAdminCap,
+    registry: &mut OracleRegistry,
+    base: vector<u8>,
+    quote: vector<u8>,
+    ctx: &mut TxContext,
+) {
+    let pair_key = make_pair_key(base, quote);
+
+    // Check existence
+    assert!(
+        dof::exists_(vector<u8>)(&registry.id, pair_key), EPairNotFound
+    );
+    dof::remove<vector<u8>>(&mut registry.id, pair_key)
+
+}
 
 // Function for GET the information about oracle in the registry
 /// Oracle (Not allow to use CLI to get an Oracle object)
