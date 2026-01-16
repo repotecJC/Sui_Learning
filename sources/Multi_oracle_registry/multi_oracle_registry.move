@@ -65,12 +65,11 @@ public fun register_oracle(
     // Pair key
     let pair_key = make_pair_key(base, quote);
     // Copy pair keys for different uses
-    let pair_key_check = copy pair_key; // Existence check
     let pair_key_event = copy pair_key; // Event emission
     let pair_string = string::utf8(copy pair_key); // For oracle creation
 
     // Check if the pair already exists
-    assert!(!dof::exists_<vector<u8>>(&registry.id, pair_key_check), EPairExists);
+    assert!(!dof::exists_<vector<u8>>(&registry.id, pair_key), EPairExists);
     // Create new oracle
     let (oracle, super_admin_cap, admin_cap) = po::new_oracle(
         pair_string,
@@ -84,7 +83,7 @@ public fun register_oracle(
     transfer::public_transfer(admin_cap, tx_context::sender(ctx));
     // Borrow ids for event
     let oracle_id = object::id(&oracle);
-    let registry_id = object::id(registry); // registry is a reference, no need to use &
+    let registry_id = object::id(registry); // object::id(&T), so if you put &mut object in it, it will only reference it
 
     // Insert the oracle into the registry
     dof::add(&mut registry.id, pair_key, oracle);
@@ -106,12 +105,28 @@ public fun remove_oracle(
     ctx: &mut TxContext,
 ) {
     let pair_key = make_pair_key(base, quote);
+    let pair_key_event = copy pair_key; // Event emission
 
     // Check existence
     assert!(dof::exists_<vector<u8>>(&registry.id, pair_key), EPairNotFound);
+
     // Remove oracle
-    dof::remove<vector<u8>>(&mut registry.id, pair_key);
+    let oracle = dof::remove<vector<u8>, po::Oracle>(&mut registry.id, pair_key);
+    // Get oracle id for the event
+    let oracle_id = object::id(&oracle);
+    // Borrow registry id for the event
+    let registry_id = object::id(registry);
+
+    // Transfer the ownership
+    transfer::public_transfer(oracle, tx_context::sender(ctx));
+
     // Emit the remove event
+    event::emit(OracleRemovedEvent {
+        registry_id,
+        oracle_id,
+        pair: pair_key_event,
+        timestamp: tx_context::epoch(ctx),
+    });
 }
 
 // ============================================================================================================
