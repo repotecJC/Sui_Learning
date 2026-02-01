@@ -1,29 +1,48 @@
 module sui_learning::multi_oracle_registry;
 
+// ---------- Common Import ----------
 use std::string;
 use sui::dynamic_object_field as dof;
 use sui::event;
-use sui_learning::price_oracle as po;
+use sui::balance::{Self, Balance};
+use sui::coin::{Self, Coin};
 
-// ---------- Error code ----------
+// ---------- sui_learning Import ----------
+use sui_learning::price_oracle as po;
+use sui_learning::oracle_coin::ORACLE_COIN;
+
+// ---------- Const ----------
+const REGISTRATION_FEE: u64 = 100_000_000; // 0.1 OC (9 decimals)
+
+/// Error code
+//// Oracle
 const EPairExists: u64 = 1; // for register_oracle
 const EPairNotFound: u64 = 2; // for get_oracle and get_oracle_mut
+//// Coin
+const EPaymentNotEnough: u64 = 3;
+const EFeeNotEnough: u64 = 4;
 
 // ---------- Struct ----------
 public struct OracleRegistry has key, store {
     id: UID,
     name: string::String,
+    treasury: Balance<ORACLE_COIN>,
 }
-public struct OracleRegisteredEvent has copy, drop, store {
+public struct OracleRegisteredEvent has copy, drop {
     registry_id: ID,
     oracle_id: ID,
     pair: vector<u8>,
     timestamp: u64,
 }
-public struct OracleRemovedEvent has copy, drop, store {
+public struct OracleRemovedEvent has copy, drop {
     registry_id: ID,
     oracle_id: ID,
     pair: vector<u8>,
+    timestamp: u64,
+}
+public struct WithdrawFeeEvent has copy, drop {
+    amount: u64,
+    recipient: address,
     timestamp: u64,
 }
 
@@ -36,8 +55,9 @@ public struct OracleRemovedEvent has copy, drop, store {
 // ---------- Create OracleRegistry ----------
 public fun create_registry(name: string::String, ctx: &mut TxContext) {
     let registry = OracleRegistry {
-        name,
         id: object::new(ctx),
+        name,
+        treasury: balance::zero(),
     };
     transfer::share_object(registry);
 }
@@ -55,6 +75,7 @@ public fun make_pair_key(base: vector<u8>, quote: vector<u8>): vector<u8> {
 /// - This will create a new oracle under the registry
 public fun register_oracle(
     registry: &mut OracleRegistry,
+    mut payment: Coin<ORACLE_COIN>,
     base: vector<u8>,
     quote: vector<u8>,
     initial_price: u64,
@@ -62,14 +83,26 @@ public fun register_oracle(
     admin_limit: u64,
     ctx: &mut TxContext,
 ) {
+    // Coin
+    /// Check if the payment amount >= REGISTRATION_FEE
+    assert!(coin::value(&payment) >= REGISTRATION_FEE, EPaymentNotEnough);
+    /// Split fee from the payment
+    let fee_coin = coin::split(&mut payment, REGISTRATION_FEE, ctx);
+    /// Turn fee_coin to balance and add it into registry treasury
+    let fee_balance = coin::into_balance(fee_coin);
+    balance::join(&mut registry.treasury, fee_balance);
+    /// transfer the rest of the payment
+    transfer::public_transfer(payment, tx_context::sender(ctx));
+
     // Pair key
     let pair_key = make_pair_key(base, quote);
-    // Copy pair keys for different uses
+    /// Copy pair keys for different uses
     let pair_key_event = copy pair_key; // Event emission
     let pair_string = string::utf8(copy pair_key); // For oracle creation
 
     // Check if the pair already exists
-    assert!(!dof::exists_<vector<u8>>(&registry.id, pair_key), EPairExists);
+    assert!(!dof::exists_<vector<u8>>(&registry.id, pair_key), EPairExists); // "!" means not 
+    
     // Create new oracle
     let (oracle, super_admin_cap, admin_cap) = po::new_oracle(
         pair_string,
@@ -78,9 +111,11 @@ public fun register_oracle(
         admin_limit,
         ctx,
     );
+    
     // Transfer the admin cap to the sender
     transfer::public_transfer(super_admin_cap, tx_context::sender(ctx));
     transfer::public_transfer(admin_cap, tx_context::sender(ctx));
+    
     // Borrow ids for event
     let oracle_id = object::id(&oracle);
     let registry_id = object::id(registry); // object::id(&T), so if you put &mut object in it, it will only reference it
@@ -141,7 +176,7 @@ public fun get_oracle(registry: &OracleRegistry, base: vector<u8>, quote: vector
     assert!(dof::exists_<vector<u8>>(&registry.id, pair_key), EPairNotFound);
 
     dof::borrow<vector<u8>, po::Oracle>(&registry.id, pair_key)
-    // <vector<u8>, po::Oracle> is to tell borrow that the type of key (get access to the target) is vector<u8> and value (the return value of target) is po::Oracle
+    // <vector<u8>, po::Oracle> is to tell borrow what type of the key (get access to the target) is vector<u8> and value (the return value of target) is po::Oracle
     // Note: because borrow is a generic function so there are many types that can use borrow, tell it what type is using is neccessary
 }
 
@@ -179,4 +214,33 @@ public fun update_oracle_price(
         new_price,
         ctx,
     )
+}
+// ============================================================================================================
+// Oracle Coin
+// - Withdraw_fees function
+// - 
+// ============================================================================================================
+
+public fun withdraw_fees(
+    _super_admin: &po::SuperAdminCap,
+    registry: &mut OracleRegistry,
+    amount: u64,
+    ctx: &mut TxContext,
+) {
+    // Get the treasury amount
+    let registry_treasury = balance::value(&registry.treasury);
+    // Make sure it's able to be withdrawn
+    assert!(registry_treasury >= amount, EFeeNotEnough);
+    // Split the amount from treasury
+    let withdrawn = balance::split(&mut registry.treasury, amount);
+    // Turn balance to coin
+    let coin_fee = coin::from_balance(withdrawn, ctx);
+    // Transfer the coin object to the caller
+    transfer::public_transfer(coin_fee, tx_context::sender(ctx));
+
+    event::emit(WithdrawFeeEvent {
+        amount,
+        recipient: tx_context::sender(ctx),
+        timestamp: tx_context::epoch(ctx),
+    });
 }
