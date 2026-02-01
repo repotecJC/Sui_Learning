@@ -20,10 +20,7 @@ const ECoinNotEnough: u64 = 2;
 // - Mint & Burn
 // - 
 // ============================================================================================================
-
-// ---------- Create Coin ----------
-fun init(witness: ORACLE_COIN, ctx: &mut TxContext) {
-    // create coin
+fun do_init(witness: ORACLE_COIN, ctx: &mut TxContext): TreasuryCap<ORACLE_COIN> {
     let (treasury_cap, metadata) =
     coin::create_currency(
         witness,
@@ -34,15 +31,20 @@ fun init(witness: ORACLE_COIN, ctx: &mut TxContext) {
         option::none(),
         ctx
     );
-    
     // Freeze the metadata (Turn it to immutable shared object)
     transfer::public_freeze_object(metadata);
+    treasury_cap
+}
+// ---------- Create Coin ----------
+fun init(witness: ORACLE_COIN, ctx: &mut TxContext) {
+    // create coin
+    let treasury_cap = do_init(witness, ctx);
 
     // Transfer the treasury cap to caller
     transfer::public_transfer(treasury_cap, tx_context::sender(ctx));
 }
 
-public fun mint(
+public entry fun mint(
     cap: &mut TreasuryCap<ORACLE_COIN>,
     amount: u64,
     recipient: address,
@@ -57,7 +59,7 @@ public fun mint(
     );
 }
 
-public fun burn(
+public entry fun burn(
     cap: &mut TreasuryCap<ORACLE_COIN>,
     mut coin: Coin<ORACLE_COIN>,
     amount: u64,
@@ -73,4 +75,15 @@ public fun burn(
         coin::burn(cap, burn_coin);
         transfer::public_transfer(coin, tx_context::sender(ctx));
     }
+}
+
+// ============================================================================================================
+// Test-Only Functions
+// - 
+// - 
+// ============================================================================================================
+
+#[test_only]
+public fun init_for_testing(ctx: &mut TxContext) {
+    init(ORACLE_COIN{}, ctx)
 }
