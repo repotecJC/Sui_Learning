@@ -4,3 +4,4 @@ traces/*
 .coverage*
 .autogit
 Move.lock
+.DS_Store
