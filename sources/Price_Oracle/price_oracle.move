@@ -66,7 +66,7 @@ public fun new_oracle(
     (oracle, super_admin_cap, admin_cap)
 }
 
-/// Public function to create oracle (If there is no return value, it can be a entry function)
+/// Public function to create oracle (If there is no return value, it can be an entry function)
 public fun create_oracle(
     pair: String,
     initial_price: u64,
@@ -79,7 +79,7 @@ public fun create_oracle(
         pair,
         initial_price,
         decimals,
-        admin_limit, // Founder has 1
+        admin_limit,
         ctx,
     );
 
