@@ -5,6 +5,7 @@ use sui_learning::oracle_coin::ORACLE_COIN;
 use sui::coin::{Self, Coin};
 use sui::balance::{Self, Balance};
 use sui::event;
+use onchain_invoice::invoice;
 // Dof and df
 // use sui::dynamic_object_field as dof; // with ID
 use sui::dynamic_field as df; // without ID
