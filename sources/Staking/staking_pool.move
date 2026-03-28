@@ -2,21 +2,32 @@ module sui_learning::staking_pool;
 
 // ---------- Imports ----------
 use sui_learning::oracle_coin::ORACLE_COIN;
+use sui_learning::multi_oracle_registry::{Self, OracleRegistry};
 use sui::coin::{Self, Coin};
 use sui::balance::{Self, Balance};
 use sui::event;
-use onchain_invoice::invoice;
+use std::u64;
+// use onchain_invoice::invoice; // Hackthon bonus
 // Dof and df
 // use sui::dynamic_object_field as dof; // with ID
 use sui::dynamic_field as df; // without ID
 // ---------- Constants ----------
 const REWARD_PRECISION: u64 = 1_000_000_000;
+const BASE_RATE: u64 = 100;
+const PRICE_ANCHOR: u64 = 1_000_000_000; // 1 USD in 9 decimals
+const MIN_RATE: u64 = 10;   // Prevent rate from approaching 0 when OC price is high
+const MAX_RATE: u64 = 1_000; // Prevent rate explosion when OC price is very low
 // ---------- Error Codes ----------
-const EInvalidRewardRate: u64 = 1;
+
 const EInvalidStakeAmount: u64 = 2;
 const EInvalidWithdrawAmount: u64 = 3;
 const ENoStakeFound: u64 = 4;
 const EAdminsOverLimit: u64 = 5;
+const EPoolMismatch: u64 = 7;
+const EOverflow: u64 = 8;
+const EAdminDenied: u64 = 9;
+const EAlreadyDenied: u64 = 10;
+const ERewardUnderflow: u64 = 11;
 
 
 // ---------- Structs ----------
@@ -26,11 +37,11 @@ public struct StakingPool has key{
     total_staked: u64, // Total staked amount in the pool
     reward_per_token_stored: u64, // Accumulated reward per token in the pool (scaled by 1e9 for precision)
     last_update_epoch: u64, // epoch timestamp
-    reward_rate: u64, // reward per second
     stake_balance: Balance<ORACLE_COIN>, // Total staked balance in the pool
     reward_balance: Balance<ORACLE_COIN>, // Total reward balance in the pool
     admin_minted: u64,
     admin_limit: u64,
+    denied_admins: vector<address>, // Denylist for revoked admins
 }
 public struct StakeRecord has store {
     amount: u64,    // Amount staked by the user
@@ -40,8 +51,13 @@ public struct StakeRecord has store {
 }
 
 // Administration structs
+public struct PoolSuperAdminCap has key, store {
+    id: UID,
+    pool_id: ID, // Bound to a specific StakingPool
+}
 public struct PoolAdminCap has key, store {
     id: UID,
+    pool_id: ID, // Bound to a specific StakingPool
 }
 
 // Events
@@ -67,35 +83,40 @@ public struct ClaimRewardEvent has copy, drop {
 // - Stake, Withdraw, Claim Reward
 // ============================================================================================================
 public fun create_pool(
-    reward_rate: u64,
     admin_limit: u64,
     ctx: &mut TxContext
 ): PoolAdminCap {
-    // reward_rate is the amount of rewards distributed per second to the stakers, so it should not be too high (otherwise the pool will run out of rewards soon) or too low (otherwise the reward will be too small to attract stakers)
-    assert!(reward_rate > 0 && reward_rate <= 10_000, EInvalidRewardRate);
-    // Create the pool
+    // Create the pool (reward_rate is now dynamically calculated from oracle price)
     let pool = StakingPool {
         id: object::new(ctx),
         total_staked: 0,
         reward_per_token_stored: 0,
         last_update_epoch: tx_context::epoch(ctx),
-        reward_rate,
         stake_balance: balance::zero(),
         reward_balance: balance::zero(),
         admin_minted: 1, // Founder has 1
         admin_limit,
+        denied_admins: vector::empty(),
     };
-    // Create the admin cap for the pool
+    // Create caps bound to this pool
+    let pool_id = object::id(&pool);
+    let super_admin_cap = PoolSuperAdminCap {
+        id: object::new(ctx),
+        pool_id,
+    };
     let admin_cap = PoolAdminCap {
         id: object::new(ctx),
+        pool_id,
     };
-    // Share the pool and transfer the admin cap to the creator
+    // Share the pool, transfer super admin cap to creator
     transfer::share_object(pool);
+    transfer::public_transfer(super_admin_cap, tx_context::sender(ctx));
     admin_cap
 }
 
 public fun stake(
     pool: &mut StakingPool,
+    registry: &OracleRegistry,
     stake_coin: Coin<ORACLE_COIN>,
     ctx: &mut TxContext
 ) {
@@ -103,7 +124,7 @@ public fun stake(
     assert!(amount > 0, EInvalidStakeAmount);
     
     // Update pool rewards before changing the stake amount
-    update_rewards(pool, ctx);
+    update_rewards(pool, registry, ctx);
     
     // Check if user already has a stake record, if not create one
     let user = tx_context::sender(ctx);
@@ -150,6 +171,7 @@ public fun stake(
 
 public fun withdraw(
     pool: &mut StakingPool,
+    registry: &OracleRegistry,
     amount: u64,
     ctx: &mut TxContext
 ) {
@@ -161,7 +183,7 @@ public fun withdraw(
     assert!(df::exists_(&pool.id, tx_context::sender(ctx)), ENoStakeFound);
 
     // Update pool rewards before changing the stake amount
-    update_rewards(pool, ctx);
+    update_rewards(pool, registry, ctx);
 
     // Get the user's stake record and reward per token stored in the pool
     let record = df::borrow_mut<address, StakeRecord>(&mut pool.id, user);
@@ -170,15 +192,87 @@ public fun withdraw(
     // Check if user has enough stake to withdraw
     assert!(record.amount >= amount, EInvalidWithdrawAmount);
 
-    
-    
+    // 1. Update user's pending rewards before changing stake amount
+    record.rewards = earned(record, rpt);
+
+    // 2. Deduct the withdraw amount from user's stake
+    record.amount = record.amount - amount;
+
+    // 3. Sync user's reward checkpoint to current pool state
+    record.reward_per_token_paid = rpt;
+
+    // Read final state into locals (releases the mutable borrow on record)
+    let remaining_amount = record.amount;
+    let remaining_rewards = record.rewards;
+
+    // 4. If fully withdrawn and no pending rewards, remove the DF to save storage
+    if (remaining_amount == 0 && remaining_rewards == 0) {
+        let StakeRecord { amount: _, reward_per_token_paid: _, rewards: _, stake_timestamp: _ }
+            = df::remove<address, StakeRecord>(&mut pool.id, user);
+    };
+
+    // 5. Deduct from pool totals
+    pool.total_staked = pool.total_staked - amount;
+
+    // 6. Split withdrawn amount from pool's stake_balance and transfer to user
+    let withdrawn_balance = balance::split(&mut pool.stake_balance, amount);
+    let withdrawn_coin = coin::from_balance(withdrawn_balance, ctx);
+    transfer::public_transfer(withdrawn_coin, user);
+
+    // 7. Emit WithdrawEvent
+    event::emit(WithdrawEvent {
+        user,
+        amount,
+        timestamp: current_epoch,
+    });
 }
 
 public fun claim_reward(
     pool: &mut StakingPool,
+    registry: &OracleRegistry,
     ctx: &mut TxContext
 ) {
-    
+    let user = tx_context::sender(ctx);
+    let current_epoch = tx_context::epoch(ctx);
+
+    // 0. Validate: user must have a stake record
+    assert!(df::exists_(&pool.id, user), ENoStakeFound);
+
+    // 1. Sync pool reward state to current epoch
+    update_rewards(pool, registry, ctx);
+
+    // 2. Get user's stake record and current reward_per_token
+    let rpt = pool.reward_per_token_stored;
+    let record = df::borrow_mut<address, StakeRecord>(&mut pool.id, user);
+
+    // 3. Calculate total pending rewards
+    let pending_rewards = earned(record, rpt);
+
+    // Early return: nothing to claim
+    if (pending_rewards == 0) { return };
+
+    // 4. Clamp to available reward balance (graceful degradation if pool underfunded)
+    let available = balance::value(&pool.reward_balance);
+    let actual_reward = u64::min(pending_rewards, available);
+
+    // Early return: pool has no reward tokens at all
+    if (actual_reward == 0) { return };
+
+    // 5. Reset record: deduct only the actually paid portion, sync checkpoint
+    record.rewards = pending_rewards - actual_reward;
+    record.reward_per_token_paid = rpt;
+
+    // 6. Split rewards from pool and transfer to user
+    let reward_bal = balance::split(&mut pool.reward_balance, actual_reward);
+    let reward_coin = coin::from_balance(reward_bal, ctx);
+    transfer::public_transfer(reward_coin, user);
+
+    // 7. Emit ClaimRewardEvent
+    event::emit(ClaimRewardEvent {
+        user,
+        amount: actual_reward,
+        timestamp: current_epoch,
+    });
 }
 // ============================================================================================================
 // Staking Pool Core Functions (Administration)
@@ -186,11 +280,15 @@ public fun claim_reward(
 // - add_admin
 // ============================================================================================================
 public fun fund_reward(
-    _admin_cap: &PoolAdminCap,
+    admin_cap: &PoolAdminCap,
     pool: &mut StakingPool,
     reward_coin: Coin<ORACLE_COIN>,
-    _ctx: &mut TxContext
+    ctx: &mut TxContext
 ) {
+    // Validate admin cap is bound to this pool
+    assert!(admin_cap.pool_id == object::id(pool), EPoolMismatch);
+    // Check caller is not on the denylist
+    assert!(!vector::contains(&pool.denied_admins, &tx_context::sender(ctx)), EAdminDenied);
     let reward_amount = coin::value(&reward_coin);
     assert!(reward_amount > 0, EInvalidStakeAmount);
 
@@ -200,16 +298,33 @@ public fun fund_reward(
 }
 
 public fun add_admin(
-    _admin_cap: &PoolAdminCap,
+    admin_cap: &PoolAdminCap,
     pool: &mut StakingPool,
     receiver: address,
     ctx: &mut TxContext,
 ) {
+    // Validate admin cap is bound to this pool
+    assert!(admin_cap.pool_id == object::id(pool), EPoolMismatch);
+    // Check caller is not on the denylist
+    assert!(!vector::contains(&pool.denied_admins, &tx_context::sender(ctx)), EAdminDenied);
     assert!(pool.admin_minted < pool.admin_limit, EAdminsOverLimit);
     // If not over limit
     pool.admin_minted = pool.admin_minted + 1;
-    let new_admin_cap = PoolAdminCap { id: object::new(ctx) };
+    let new_admin_cap = PoolAdminCap { id: object::new(ctx), pool_id: admin_cap.pool_id };
     transfer::public_transfer(new_admin_cap, receiver);
+}
+
+public fun remove_admin(
+    super_admin_cap: &PoolSuperAdminCap,
+    pool: &mut StakingPool,
+    addr: address,
+) {
+    // Validate super admin cap is bound to this pool
+    assert!(super_admin_cap.pool_id == object::id(pool), EPoolMismatch);
+    // Ensure the address is not already denied
+    assert!(!vector::contains(&pool.denied_admins, &addr), EAlreadyDenied);
+    // Add to denylist
+    vector::push_back(&mut pool.denied_admins, addr);
 }
 
 // ============================================================================================================
@@ -222,10 +337,11 @@ public fun add_admin(
 // 2. Spread these rewards evenly to total_staked, count how much rewards each token get (reward_per_token_delta = total_new_rewards × REWARD_PRECISION / total_staked)
 fun update_rewards(
     pool: &mut StakingPool,
+    registry: &OracleRegistry,
     ctx: &TxContext
 ) {
     let current_epoch = tx_context::epoch(ctx);
-    // only update epoch if there is no one stakeing
+    // only update epoch if there is no one staking
     if (pool.total_staked == 0) {
         pool.last_update_epoch = current_epoch;
         return
@@ -234,12 +350,24 @@ fun update_rewards(
     // count rewards
     let epochs_passed = current_epoch - pool.last_update_epoch;
     if (epochs_passed > 0) {
-        // total rewards
-        let total_new_rewards = pool.reward_rate * epochs_passed;
+        // Step A: Read OC/USD price from oracle registry
+        let oc_price = multi_oracle_registry::get_oracle_price(registry, b"OC", b"USD");
+
+        // Step B: Calculate dynamic rate with min/max bounds
+        let raw_rate = if (oc_price == 0) { BASE_RATE }
+                       else { BASE_RATE * PRICE_ANCHOR / oc_price };
+        let dynamic_rate = if (raw_rate < MIN_RATE) { MIN_RATE }
+                           else if (raw_rate > MAX_RATE) { MAX_RATE }
+                           else { raw_rate };
+
+        // Step C: Use dynamic_rate to compute total new rewards
+        // Overflow guard: ensure dynamic_rate * epochs_passed won't overflow u64
+        assert!(dynamic_rate <= 18_446_744_073_709_551_615 / epochs_passed, EOverflow);
+        let total_new_rewards = dynamic_rate * epochs_passed;
+        // Overflow guard: ensure total_new_rewards * REWARD_PRECISION won't overflow u64
+        assert!(total_new_rewards <= 18_446_744_073_709_551_615 / REWARD_PRECISION, EOverflow);
         // reward per token (variation)
         let reward_per_token_delta = (total_new_rewards * REWARD_PRECISION) / pool.total_staked;
-        // The reason why times the REWARD_PRECISION is to prevent to lost decimal of the reward
-        // e.g. total_new_rewards = 3, total_staked = 100, reward_per_token_delta should be 0.03, but if only use 3/100 then the reward will be gone.
 
         // Update the pool's reward per token and last update epoch
         pool.reward_per_token_stored = pool.reward_per_token_stored + reward_per_token_delta;
@@ -248,6 +376,8 @@ fun update_rewards(
 }
 
 fun earned(record: &StakeRecord, rpt: u64): u64 {
+
+    assert!(rpt >= record.reward_per_token_paid, ERewardUnderflow);
     let reward_delta = rpt - record.reward_per_token_paid;
     (record.amount * reward_delta) / REWARD_PRECISION + record.rewards
 }
@@ -279,16 +409,41 @@ public fun get_stake_amount(
 // Get how much rewards user can claim in the pool
 public fun get_pending_rewards(
     pool: &StakingPool,
-    user: address
+    registry: &OracleRegistry,
+    user: address,
+    ctx: &TxContext
 ): u64 {
-    if(!df::exists_(&pool.id, user)) {
-        return 0;
+    if(!df::exists_(&pool.id, user)) {return 0};
+
+    let current_epoch = tx_context::epoch(ctx);
+    let epochs_passed = current_epoch - pool.last_update_epoch;
+    let live_rpt =
+    if (pool.total_staked > 0 && epochs_passed > 0) {
+        // Dynamic rate calculation (mirrors update_rewards logic)
+        let oc_price = multi_oracle_registry::get_oracle_price(registry, b"OC", b"USD");
+        let raw_rate = if (oc_price == 0) { BASE_RATE }
+                       else { BASE_RATE * PRICE_ANCHOR / oc_price };
+        let dynamic_rate = if (raw_rate < MIN_RATE) { MIN_RATE }
+                           else if (raw_rate > MAX_RATE) { MAX_RATE }
+                           else { raw_rate };
+
+        if (dynamic_rate > 0 && epochs_passed > 18_446_744_073_709_551_615 / dynamic_rate) {
+            // overflow: use stored rpt without adding new rewards
+            pool.reward_per_token_stored
+        } else {
+            let total_new_rewards = dynamic_rate * epochs_passed;
+            if (total_new_rewards > 18_446_744_073_709_551_615 / REWARD_PRECISION) {
+                pool.reward_per_token_stored
+            } else {
+                pool.reward_per_token_stored + (total_new_rewards * REWARD_PRECISION) / pool.total_staked
+            }
+        }
+    } else {
+        pool.reward_per_token_stored
     };
 
-    let rpt = pool.reward_per_token_stored;
     let record = df::borrow<address, StakeRecord>(&pool.id, user);
-
-    earned(record, rpt)
+    earned(record, live_rpt)
 }
 // Get how much total staked in the pool
 public fun get_total_staked(
