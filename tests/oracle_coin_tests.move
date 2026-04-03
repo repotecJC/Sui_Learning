@@ -1,8 +1,8 @@
 #[test_only]
-module sui_learning::oracl_coin_tests;
+module oracle_staking_pool::oracl_coin_tests;
 
 // ---------- Common Import ----------
-use sui_learning::oracle_coin::{Self, ORACLE_COIN};
+use oracle_staking_pool::oracle_coin::{Self, ORACLE_COIN};
 use sui::test_scenario::{Self as ts};
 use sui::coin::{Self, TreasuryCap, Coin};
 

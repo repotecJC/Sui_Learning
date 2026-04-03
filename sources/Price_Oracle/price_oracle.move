@@ -1,6 +1,6 @@
 // Purpose: Allow everyone can see the price, but only admin can update it
 
-module sui_learning::price_oracle;
+module oracle_staking_pool::price_oracle;
 
 use std::string::String;
 use sui::event;

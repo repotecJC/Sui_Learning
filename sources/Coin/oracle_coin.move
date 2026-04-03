@@ -1,4 +1,4 @@
-module sui_learning::oracle_coin;
+module oracle_staking_pool::oracle_coin;
 
 // ---------- Common Import ----------
 use sui::coin::{Self, TreasuryCap, Coin};
@@ -8,7 +8,7 @@ use sui::coin::{Self, TreasuryCap, Coin};
 public struct ORACLE_COIN has drop{}
 
 // ---------- Const ----------
-const COIN_LIMITATION: u64 = 100_000_000_000;
+const COIN_LIMITATION: u64 = 1_000_000_000_000_000_000;
 
 /// Error Code
 const ECoinOverLimit: u64 = 1;

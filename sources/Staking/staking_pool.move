@@ -1,8 +1,8 @@
-module sui_learning::staking_pool;
+module oracle_staking_pool::staking_pool;
 
 // ---------- Imports ----------
-use sui_learning::oracle_coin::ORACLE_COIN;
-use sui_learning::multi_oracle_registry::{Self, OracleRegistry};
+use oracle_staking_pool::oracle_coin::ORACLE_COIN;
+use oracle_staking_pool::multi_oracle_registry::{Self, OracleRegistry};
 use sui::coin::{Self, Coin};
 use sui::balance::{Self, Balance};
 use sui::event;
@@ -85,7 +85,7 @@ public struct ClaimRewardEvent has copy, drop {
 public fun create_pool(
     admin_limit: u64,
     ctx: &mut TxContext
-): PoolAdminCap {
+) {
     // Create the pool (reward_rate is now dynamically calculated from oracle price)
     let pool = StakingPool {
         id: object::new(ctx),
@@ -111,7 +111,8 @@ public fun create_pool(
     // Share the pool, transfer super admin cap to creator
     transfer::share_object(pool);
     transfer::public_transfer(super_admin_cap, tx_context::sender(ctx));
-    admin_cap
+    transfer::public_transfer(admin_cap, tx_context::sender(ctx));
+
 }
 
 public fun stake(

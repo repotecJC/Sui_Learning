@@ -1,4 +1,4 @@
-module sui_learning::multi_oracle_registry;
+module oracle_staking_pool::multi_oracle_registry;
 
 // ---------- Common Import ----------
 use std::string;
@@ -8,8 +8,8 @@ use sui::balance::{Self, Balance};
 use sui::coin::{Self, Coin};
 
 // ---------- sui_learning Import ----------
-use sui_learning::price_oracle as po;
-use sui_learning::oracle_coin::ORACLE_COIN;
+use oracle_staking_pool::price_oracle as po;
+use oracle_staking_pool::oracle_coin::ORACLE_COIN;
 
 // ---------- Const ----------
 const REGISTRATION_FEE: u64 = 100_000_000; // 0.1 OC (9 decimals)
